@@ -7,15 +7,16 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const port = process.env.PORT || 3000; 
 
-// KESİN ÇÖZÜM: CORS için Netlify adresinizi tanımlıyoruz
-const ALLOWED_ORIGIN = 'https://taylorswiftquiz.netlify.app'; 
+// KESİN ÇÖZÜM: CORS için Netlify adresini çevre değişkeni olarak kullanıyoruz.
+// Eğer Render'da ALLOWED_ORIGIN tanımlı değilse, Netlify adresini yedek olarak kullanır.
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://taylorswiftquiz.netlify.app'; 
 
 // Token oluşturmak için kullanılacak gizli anahtar
 const JWT_SECRET = process.env.JWT_SECRET || 'cok_gizli_taylor_swift_anahtari'; 
 
 // --- Middleware ---
 app.use(express.json()); 
-// CORS'u sadece Netlify adresinizden gelen isteklere izin verecek şekilde yapılandırıyoruz
+// CORS'u sadece tanımlanan adresten gelen isteklere izin verecek şekilde yapılandırıyoruz
 app.use(cors({
     origin: ALLOWED_ORIGIN,
     methods: ['GET', 'POST', 'DELETE']
@@ -23,18 +24,18 @@ app.use(cors({
 
 // --- 1. PostgreSQL Veritabanı Bağlantısı Ayarları ---
 const dbConfig = {
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    connectionString: process.env.DATABASE_URL, // Render'dan gelen URL
+    ssl: { rejectUnauthorized: false } // Render için SSL zorunluluğu
 };
 
-// Yerel test için:
+// Yerel test için (Gerekirse SSL'i devre dışı bırakır):
 if (process.env.NODE_ENV !== 'production') {
     dbConfig.ssl = false;
 }
 
 let pool = new Pool(dbConfig); 
 
-// PostgreSQL'e özel, tek bir tablo oluşturma fonksiyonu
+// PostgreSQL'e özel, tablo oluşturma ve admin ekleme fonksiyonu
 async function setupDatabase() {
     console.log('Veritabanı yapısı kontrol ediliyor...');
     const client = await pool.connect();
@@ -70,6 +71,7 @@ async function setupDatabase() {
         await client.query(schema);
         console.log('✅ Veritabanı yapısı başarılı bir şekilde hazırlandı (veya zaten mevcuttu).');
         
+        // Admin kullanıcısı yoksa ekle
         const adminCheck = await client.query("SELECT COUNT(*) FROM Kullanicilar WHERE rol = 'admin'");
         if (parseInt(adminCheck.rows[0].count) === 0) {
             await client.query("INSERT INTO Kullanicilar (email, sifre_hash, rol) VALUES ('admin@quiz.com', '123456', 'admin')");
@@ -83,8 +85,6 @@ async function setupDatabase() {
 
 setupDatabase();
 
-
-// --- Rota Fonksiyonları (Sorgular PostgreSQL'e uyarlanmıştır) ---
 
 // --- 2. YENİ KULLANICI KAYIT ROTASI ---
 app.post('/api/register', async (req, res) => {
