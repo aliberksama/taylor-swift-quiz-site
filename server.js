@@ -1,7 +1,7 @@
 // Gerekli kütüphaneleri içe aktar
 const express = require('express');
 const { Pool } = require('pg'); 
-const cors = require('cors'); // BURASI KRİTİK: Tüm isteklere izin verecek
+const cors = require('cors'); 
 const jwt = require('jsonwebtoken');
 
 const app = express();
@@ -12,7 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cok_gizli_taylor_swift_anahtari';
 
 // --- Middleware ---
 app.use(express.json()); 
-app.use(cors()); // <-- SADECE BU KALSIN! Tüm kaynaklara izin verilir (Hata tespiti için)
+app.use(cors()); // Geçici olarak tüm kaynaklara izin veriyoruz (Hata tespiti için)
 
 // --- 1. PostgreSQL Veritabanı Bağlantısı Ayarları ---
 const dbConfig = {
@@ -20,40 +20,37 @@ const dbConfig = {
     ssl: { rejectUnauthorized: false } 
 };
 
-// Yerel test için (Gerekirse SSL'i devre dışı bırakır):
-if (process.env.NODE_ENV !== 'production') {
-    dbConfig.ssl = false;
-}
+if (process.env.NODE_ENV !== 'production') { dbConfig.ssl = false; }
 
 let pool = new Pool(dbConfig); 
 
 // PostgreSQL'e özel, tablo oluşturma ve admin ekleme fonksiyonu
 async function setupDatabase() {
-    // ... (Tablo oluşturma kodları aynı kalır) ...
+    console.log('Veritabanı yapısı kontrol ediliyor...');
     const client = await pool.connect();
     try {
         const schema = `
-            CREATE TABLE IF NOT EXISTS Kullanicilar (
+            CREATE TABLE IF NOT EXISTS "Kullanicilar" (
                 kullanici_id SERIAL PRIMARY KEY,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 sifre_hash VARCHAR(255) NOT NULL,
                 rol VARCHAR(20) NOT NULL DEFAULT 'kullanici'
             );
-            CREATE TABLE IF NOT EXISTS Sorular (
+            CREATE TABLE IF NOT EXISTS "Sorular" (
                 soru_id SERIAL PRIMARY KEY,
                 soru_metni TEXT NOT NULL,
                 fotograf_url VARCHAR(255),
                 dogru_cevap_index INTEGER NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS CevapSiklari (
+            CREATE TABLE IF NOT EXISTS "CevapSiklari" (
                 cevap_id SERIAL PRIMARY KEY,
-                soru_id INTEGER REFERENCES Sorular(soru_id) ON DELETE CASCADE,
+                soru_id INTEGER REFERENCES "Sorular"(soru_id) ON DELETE CASCADE,
                 sik_metri VARCHAR(255) NOT NULL,
                 sik_index INTEGER NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS QuizSonuclari (
+            CREATE TABLE IF NOT EXISTS "QuizSonuclari" (
                 sonuc_id SERIAL PRIMARY KEY,
-                kullanici_id INTEGER REFERENCES Kullanicilar(kullanici_id),
+                kullanici_id INTEGER REFERENCES "Kullanicilar"(kullanici_id),
                 dogru_sayisi INTEGER NOT NULL,
                 yanlis_sayisi INTEGER NOT NULL,
                 sure_saniye INTEGER DEFAULT 0,
@@ -63,9 +60,10 @@ async function setupDatabase() {
         await client.query(schema);
         console.log('✅ Veritabanı yapısı başarılı bir şekilde hazırlandı (veya zaten mevcuttu).');
         
-        const adminCheck = await client.query("SELECT COUNT(*) FROM Kullanicilar WHERE rol = 'admin'");
+        // Tablo adını tırnak içine alarak admin kontrolünü düzeltme
+        const adminCheck = await client.query('SELECT COUNT(*) FROM "Kullanicilar" WHERE rol = $1', ['admin']);
         if (parseInt(adminCheck.rows[0].count) === 0) {
-            await client.query("INSERT INTO Kullanicilar (email, sifre_hash, rol) VALUES ('admin@quiz.com', '123456', 'admin')");
+            await client.query("INSERT INTO \"Kullanicilar\" (email, sifre_hash, rol) VALUES ('admin@quiz.com', '123456', 'admin')");
             console.log('✅ Varsayılan admin kullanıcısı eklendi.');
         }
 
@@ -77,14 +75,19 @@ async function setupDatabase() {
 setupDatabase();
 
 
+// --- Rota Fonksiyonları (Sorgular PostgreSQL'e uyarlanmıştır) ---
+
 // --- 2. YENİ KULLANICI KAYIT ROTASI ---
 app.post('/api/register', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) { return res.status(400).json({ success: false, message: 'E-posta ve şifre gereklidir.' }); }
     try {
-        const existingUsers = await pool.query('SELECT email FROM Kullanicilar WHERE email = $1', [email]);
+        const existingUsers = await pool.query('SELECT email FROM "Kullanicilar" WHERE email = $1', [email]); // DÜZELTİLDİ
         if (existingUsers.rows.length > 0) { return res.status(409).json({ success: false, message: 'Bu e-posta zaten kullanımda.' }); }
-        const result = await pool.query("INSERT INTO Kullanicilar (email, sifre_hash, rol) VALUES ($1, $2, 'kullanici') RETURNING kullanici_id", [email, password]);
+        const result = await pool.query(
+            "INSERT INTO \"Kullanicilar\" (email, sifre_hash, rol) VALUES ($1, $2, 'kullanici') RETURNING kullanici_id", // DÜZELTİLDİ
+            [email, password]
+        );
         res.status(201).json({ success: true, message: 'Kayıt başarılı! Giriş yapabilirsiniz.', userId: result.rows[0].kullanici_id });
     } catch (error) {
         console.error('Kayıt hatası:', error);
@@ -97,15 +100,11 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const users = await pool.query('SELECT * FROM Kullanicilar WHERE email = $1', [email]);
+        const users = await pool.query('SELECT * FROM "Kullanicilar" WHERE email = $1', [email]); // DÜZELTİLDİ
         const user = users.rows[0];
         if (!user) { return res.status(401).json({ success: false, message: 'Kullanıcı bulunamadı.' }); }
         if (password === user.sifre_hash) { 
-            const token = jwt.sign(
-                { kullanici_id: user.kullanici_id, rol: user.rol, email: user.email }, 
-                JWT_SECRET, 
-                { expiresIn: '1h' }
-            );
+            const token = jwt.sign({ kullanici_id: user.kullanici_id, rol: user.rol, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
             return res.json({ success: true, message: 'Giriş başarılı!', token: token, rol: user.rol, email: user.email });
         } else {
             return res.status(401).json({ success: false, message: 'Yanlış şifre.' });
@@ -133,17 +132,15 @@ const authenticateToken = (req, res, next) => {
 app.post('/api/admin/add-question', authenticateToken, async (req, res) => {
     if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Yetkisiz erişim. Sadece adminler soru ekleyebilir.' }); }
     const { soru_metni, fotograf_url, cevap_siklari, dogru_cevap_index } = req.body;
-    if (!soru_metni || !cevap_siklari || !dogru_cevap_index || cevap_siklari.length !== 4) {
-        return res.status(400).json({ success: false, message: 'Tüm alanlar (4 şık dahil) gereklidir.' });
-    }
+    if (!soru_metni || !cevap_siklari || !dogru_cevap_index || cevap_siklari.length !== 4) { return res.status(400).json({ success: false, message: 'Tüm alanlar (4 şık dahil) gereklidir.' }); }
     try {
         const client = await pool.connect();
         await client.query('BEGIN');
         try {
-            const result = await client.query('INSERT INTO Sorular (soru_metni, fotograf_url, dogru_cevap_index) VALUES ($1, $2, $3) RETURNING soru_id', [soru_metni, fotograf_url || null, dogru_cevap_index]);
+            const result = await client.query('INSERT INTO "Sorular" (soru_metni, fotograf_url, dogru_cevap_index) VALUES ($1, $2, $3) RETURNING soru_id', [soru_metni, fotograf_url || null, dogru_cevap_index]); // DÜZELTİLDİ
             const newSoruId = result.rows[0].soru_id;
             for (let i = 0; i < cevap_siklari.length; i++) {
-                await client.query('INSERT INTO CevapSiklari (soru_id, sik_metri, sik_index) VALUES ($1, $2, $3)', [newSoruId, cevap_siklari[i], i + 1]);
+                await client.query('INSERT INTO "CevapSiklari" (soru_id, sik_metri, sik_index) VALUES ($1, $2, $3)', [newSoruId, cevap_siklari[i], i + 1]); // DÜZELTİLDİ
             }
             await client.query('COMMIT');
             client.release();
@@ -155,7 +152,7 @@ app.post('/api/admin/add-question', authenticateToken, async (req, res) => {
         }
     } catch (error) {
         console.error('Soru ekleme hatası:', error);
-        res.status(500).json({ success: false, message: 'Soru eklenirken bir sunucu hatası oluştu.' });
+        res.status(500).json({ success: false, message: 'Sunucu hatası.' });
     }
 });
 
@@ -165,7 +162,7 @@ app.delete('/api/admin/delete-question/:soru_id', authenticateToken, async (req,
     if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Yetkisiz erişim. Sadece adminler soru silebilir.' }); }
     const soruId = req.params.soru_id;
     try {
-        const result = await pool.query('DELETE FROM Sorular WHERE soru_id = $1', [soruId]);
+        const result = await pool.query('DELETE FROM "Sorular" WHERE soru_id = $1', [soruId]); // DÜZELTİLDİ
         if (result.rowCount === 0) { return res.status(404).json({ success: false, message: 'Silinecek soru bulunamadı.' }); }
         res.json({ success: true, message: `Soru ID: ${soruId} başarıyla silindi.` });
     } catch (error) {
@@ -178,10 +175,10 @@ app.delete('/api/admin/delete-question/:soru_id', authenticateToken, async (req,
 // --- 6. QUIZ SORULARINI ÇEKME ROTASI ---
 app.get('/api/quiz/questions', async (req, res) => {
     try {
-        const questionsResult = await pool.query('SELECT soru_id, soru_metni, fotograf_url FROM Sorular ORDER BY RANDOM()');
+        const questionsResult = await pool.query('SELECT soru_id, soru_metni, fotograf_url FROM "Sorular" ORDER BY RANDOM()'); // DÜZELTİLDİ
         let questions = questionsResult.rows;
         for (const question of questions) {
-            const choicesResult = await pool.query('SELECT sik_index, sik_metri FROM CevapSiklari WHERE soru_id = $1 ORDER BY sik_index', [question.soru_id]);
+            const choicesResult = await pool.query('SELECT sik_index, sik_metri FROM "CevapSiklari" WHERE soru_id = $1 ORDER BY sik_index', [question.soru_id]); // DÜZELTİLDİ
             question.siklar = choicesResult.rows;
         }
         res.json({ success: true, questions: questions });
@@ -197,7 +194,7 @@ app.post('/api/quiz/submit', authenticateToken, async (req, res) => {
     const kullanici_id = req.user.kullanici_id; 
     const { dogru_sayisi, yanlis_sayisi, sure_saniye } = req.body; 
     try {
-        const result = await pool.query('INSERT INTO QuizSonuclari (kullanici_id, dogru_sayisi, yanlis_sayisi, sure_saniye) VALUES ($1, $2, $3, $4) RETURNING sonuc_id', [kullanici_id, dogru_sayisi, yanlis_sayisi, sure_saniye]);
+        const result = await pool.query('INSERT INTO "QuizSonuclari" (kullanici_id, dogru_sayisi, yanlis_sayisi, sure_saniye) VALUES ($1, $2, $3, $4) RETURNING sonuc_id', [kullanici_id, dogru_sayisi, yanlis_sayisi, sure_saniye]); // DÜZELTİLDİ
         res.json({ success: true, message: 'Quiz sonuçları başarıyla kaydedildi.', sonuc_id: result.rows[0].sonuc_id });
     } catch (error) {
         console.error('Sonuç kaydetme hatası:', error);
@@ -212,13 +209,13 @@ app.get('/api/admin/results', authenticateToken, async (req, res) => {
     try {
         const results = await pool.query(`
             SELECT QS.sonuc_id, U.email, QS.dogru_sayisi, QS.yanlis_sayisi, QS.tarih, QS.sure_saniye
-            FROM QuizSonuclari AS QS JOIN Kullanicilar AS U ON QS.kullanici_id = U.kullanici_id
+            FROM "QuizSonuclari" AS QS JOIN "Kullanicilar" AS U ON QS.kullanici_id = U.kullanici_id
             ORDER BY QS.tarih DESC
         `);
         res.json({ success: true, results: results.rows });
     } catch (error) {
         console.error('Sonuçları çekme hatası:', error);
-        res.status(500).json({ success: false, message: 'Sonuçlar yüklenirken sunucu hatası oluştu.' });
+        res.status(500).json({ success: false, message: 'Sunucu hatası.' });
     }
 });
 
@@ -229,7 +226,7 @@ app.get('/api/admin/leaderboard', authenticateToken, async (req, res) => {
     try {
         const leaderboard = await pool.query(`
             SELECT U.email, QS.dogru_sayisi, (QS.dogru_sayisi + QS.yanlis_sayisi) AS toplam_soru, QS.sure_saniye
-            FROM QuizSonuclari AS QS JOIN Kullanicilar AS U ON QS.kullanici_id = U.kullanici_id
+            FROM "QuizSonuclari" AS QS JOIN "Kullanicilar" AS U ON QS.kullanici_id = U.kullanici_id
             ORDER BY QS.dogru_sayisi DESC, QS.sure_saniye ASC, QS.tarih DESC
             LIMIT 50 
         `);
