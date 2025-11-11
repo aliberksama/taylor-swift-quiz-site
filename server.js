@@ -346,5 +346,5 @@ app.get('/', (req, res) => {
 
 // Sunucuyu başlatma
 app.listen(port, () => {
-    console.log(`🚀 Sunucu şu adreste çalışıyor: http://localhost:${port}`);
+    console.log(`🚀 Sunucu şu adreste çalışıyor: https://taylor-swift-quiz-site.onrender.com;
 });
