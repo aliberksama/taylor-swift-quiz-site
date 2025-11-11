@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taylor Quiz - Giriş / Kayıt</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f0f0f0; }
+        .auth-container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); width: 100%; max-width: 400px; text-align: center; }
+        h2 { color: #333; margin-bottom: 20px; }
+        input[type="email"], input[type="password"] { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #ff69b4; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 15px; font-size: 16px; transition: background-color 0.3s; }
+        button:hover { background-color: #e65a9e; }
+        .message { margin-top: 15px; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .switch-link { margin-top: 15px; font-size: 14px; cursor: pointer; color: #007bff; }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <h2 id="formTitle">Kullanıcı Girişi</h2>
+
+        <form id="authForm">
+            <input type="email" id="email" placeholder="E-posta" required>
+            <input type="password" id="password" placeholder="Şifre" required>
+            <button type="submit" id="submitBtn">Giriş Yap</button>
+        </form>
+
+        <div class="switch-link" onclick="switchForm()">Hesabın yok mu? Kayıt Ol</div>
+        <div id="responseMessage" class="message" style="display: none;"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:3000/api/';
+        let isLogin = true;
+
+        // Form Görüntüsünü Değiştirme
+        function switchForm() {
+            isLogin = !isLogin;
+            document.getElementById('formTitle').textContent = isLogin ? 'Kullanıcı Girişi' : 'Yeni Kayıt';
+            document.getElementById('submitBtn').textContent = isLogin ? 'Giriş Yap' : 'Kayıt Ol';
+            document.querySelector('.switch-link').textContent = isLogin ? 'Hesabın yok mu? Kayıt Ol' : 'Zaten hesabın var mı? Giriş Yap';
+            document.getElementById('responseMessage').style.display = 'none';
+        }
+
+        document.getElementById('authForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const endpoint = isLogin ? 'login' : 'register';
+
+            const messageDiv = document.getElementById('responseMessage');
+            messageDiv.style.display = 'none';
+
+            try {
+                const response = await fetch(API_BASE_URL + endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const result = await response.json();
+
+                messageDiv.style.display = 'block';
+                if (response.ok && result.success) {
+                    messageDiv.classList.add('success');
+                    messageDiv.classList.remove('error');
+                    messageDiv.innerHTML = `✅ ${result.message}`;
+                    
+                    if (isLogin) {
+                        // Giriş başarılıysa: Token ve rolü kaydet
+                        localStorage.setItem('userToken', result.token);
+                        localStorage.setItem('userRole', result.rol);
+                        localStorage.setItem('userEmail', result.email); // E-postayı da kaydediyoruz
+                        
+                        // Kullanıcıyı rolüne göre yönlendir
+                        setTimeout(() => {
+                            if (result.rol === 'admin') {
+                                // YÖNLENDİRME BURADA GÜNCELLENDİ
+                                window.location.href = 'admin_panel.html'; 
+                            } else {
+                                // Normal quiz sayfasına yönlendir
+                                window.location.href = 'quiz_coz.html'; 
+                            }
+                        }, 1500);
+                    }
+                    
+                } else {
+                    messageDiv.classList.add('error');
+                    messageDiv.classList.remove('success');
+                    messageDiv.innerHTML = `❌ Hata: ${result.message || 'Bilinmeyen Hata'}`;
+                }
+
+            } catch (error) {
+                console.error('İletişim hatası:', error);
+                messageDiv.classList.add('error');
+                messageDiv.classList.remove('success');
+                messageDiv.innerHTML = '❌ Sunucuya bağlanılamadı. Node.js sunucunuz çalışıyor mu?';
+            }
+        });
+    </script>
+</body>
+</html>

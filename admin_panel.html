@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taylor Quiz - Admin Paneli</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; background-color: #f0f4f8; color: #333; margin: 0; padding: 0; }
+        .admin-container { max-width: 1000px; margin: 50px auto; background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); overflow: hidden; }
+        .nav-tabs { display: flex; border-bottom: 2px solid #ffccd9; background-color: #fff0f5; }
+        .nav-link { padding: 15px 25px; cursor: pointer; border: none; background: transparent; font-size: 1em; color: #555; transition: background-color 0.3s, color 0.3s; font-weight: bold; }
+        .nav-link.active { background-color: #ff69b4; color: white; border-radius: 0; }
+        .nav-link:hover:not(.active) { background-color: #f7e0e7; }
+        .tab-content { padding: 30px; }
+        h2 { color: #ff69b4; margin-bottom: 25px; border-bottom: 1px dashed #ffccd9; padding-bottom: 10px; }
+        
+        /* Form Stilleri */
+        label { display: block; margin-top: 15px; font-weight: bold; color: #444; }
+        input[type="text"], textarea, select { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1em; transition: border-color 0.3s; }
+        input[type="text"]:focus, textarea:focus, select:focus { border-color: #ff69b4; outline: none; }
+        textarea { resize: vertical; }
+        .form-group { margin-bottom: 20px; }
+        button { background-color: #4CAF50; color: white; padding: 12px 25px; border: none; border-radius: 6px; cursor: pointer; font-size: 1em; margin-top: 20px; transition: background-color 0.3s; }
+        button.primary { background-color: #007bff; }
+        button.primary:hover { background-color: #0056b3; }
+        button.delete { background-color: #dc3545; }
+        button.delete:hover { background-color: #c82333; }
+        
+        /* Mesaj Stilleri */
+        .message-div { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        
+        /* Tablo Stilleri */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #ff69b4; color: white; font-weight: bold; }
+        tr:hover { background-color: #fff0f5; }
+        .table-responsive { overflow-x: auto; }
+
+        .leaderboard-rank { font-size: 1.2em; font-weight: bold; color: #ff69b4; }
+        
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="nav-tabs">
+            <button class="nav-link active" onclick="showTab('addQuestionTab', this)">Soru Ekle</button>
+            <button class="nav-link" onclick="showTab('deleteQuestionTab', this)">Soru Sil</button>
+            <button class="nav-link" onclick="showTab('resultsTab', this)">Kullanıcı Cevapları</button>
+            <button class="nav-link" onclick="showTab('leaderboardTab', this)">Liderlik Tablosu</button>
+            <button class="nav-link" onclick="logout()">Çıkış Yap</button>
+        </div>
+
+        <div class="tab-content" id="tabContent">
+
+            <div id="addQuestionTab" class="tab-pane active">
+                <h2>Soru Ekle</h2>
+                <form id="addQuestionForm">
+                    <div class="form-group">
+                        <label for="soru_metni">Soru Metni:</label>
+                        <textarea id="soru_metni" required></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="fotograf_url">Fotoğraf URL'si (Opsiyonel):</label>
+                        <input type="text" id="fotograf_url" placeholder="Görsel linki (örneğin: http://example.com/taylor.jpg)">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="sik_a">A Şıkkı:</label>
+                        <input type="text" id="sik_a" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="sik_b">B Şıkkı:</label>
+                        <input type="text" id="sik_b" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="sik_c">C Şıkkı:</label>
+                        <input type="text" id="sik_c" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="sik_d">D Şıkkı:</label>
+                        <input type="text" id="sik_d" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dogru_cevap_index">Doğru Cevap:</label>
+                        <select id="dogru_cevap_index" required>
+                            <option value="1">A Şıkkı</option>
+                            <option value="2">B Şıkkı</option>
+                            <option value="3">C Şıkkı</option>
+                            <option value="4">D Şıkkı</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="primary">Soru Ekle</button>
+                    <div id="addQuestionMessage" class="message-div" style="display: none;"></div>
+                </form>
+            </div>
+
+            <div id="deleteQuestionTab" class="tab-pane" style="display: none;">
+                <h2>Soru Sil</h2>
+                <div class="form-group">
+                    <label for="delete_soru_id">Silinecek Soru ID'si:</label>
+                    <input type="text" id="delete_soru_id" placeholder="Silmek istediğiniz sorunun ID numarasını girin" required>
+                </div>
+                <button onclick="deleteQuestion()" class="delete">Soru Sil</button>
+                <div id="deleteQuestionMessage" class="message-div" style="display: none;"></div>
+            </div>
+
+            <div id="resultsTab" class="tab-pane" style="display: none;">
+                <h2>Tüm Kullanıcı Cevapları</h2>
+                <div id="resultsTableContainer" class="table-responsive">
+                    </div>
+            </div>
+
+            <div id="leaderboardTab" class="tab-pane" style="display: none;">
+                <h2>Liderlik Tablosu (En İyi Skorlar)</h2>
+                <p>Sıralama: Doğru sayısı (Azalan), Süre (Artan)</p>
+                <div id="leaderboardTableContainer" class="table-responsive">
+                    </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:3000/api/';
+        const userToken = localStorage.getItem('userToken');
+        const userRole = localStorage.getItem('userRole');
+
+        // Yönlendirme Kontrolü ve Yetkilendirme
+        if (!userToken || userRole !== 'admin') {
+            alert('Yetkisiz erişim. Lütfen admin olarak giriş yapın.');
+            window.location.href = 'auth.html';
+        }
+
+        function showTab(tabId, element) {
+            // Tüm sekmeleri gizle
+            document.querySelectorAll('.tab-pane').forEach(tab => {
+                tab.style.display = 'none';
+            });
+            // İstenen sekmeyi göster
+            document.getElementById(tabId).style.display = 'block';
+
+            // Nav link stillerini güncelle
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            element.classList.add('active');
+
+            // Eğer sonuçlar veya leaderboard sekmesine geçildiyse verileri çek
+            if (tabId === 'resultsTab') {
+                fetchResults();
+            } else if (tabId === 'leaderboardTab') {
+                fetchLeaderboard();
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('userToken');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userEmail');
+            window.location.href = 'auth.html';
+        }
+
+        // Başlangıçta Soru Ekle sekmesini göster
+        document.addEventListener('DOMContentLoaded', () => {
+            showTab('addQuestionTab', document.querySelector('.nav-link.active'));
+        });
+
+        // ----------------------------------------------------
+        // Soru Ekleme Fonksiyonu
+        // ----------------------------------------------------
+        document.getElementById('addQuestionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const messageDiv = document.getElementById('addQuestionMessage');
+            messageDiv.style.display = 'none';
+
+            const data = {
+                soru_metni: document.getElementById('soru_metni').value,
+                fotograf_url: document.getElementById('fotograf_url').value,
+                cevap_siklari: [
+                    document.getElementById('sik_a').value,
+                    document.getElementById('sik_b').value,
+                    document.getElementById('sik_c').value,
+                    document.getElementById('sik_d').value
+                ],
+                dogru_cevap_index: parseInt(document.getElementById('dogru_cevap_index').value)
+            };
+
+            try {
+                const response = await fetch(API_BASE_URL + 'admin/add-question', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${userToken}` 
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                messageDiv.style.display = 'block';
+                if (response.ok && result.success) {
+                    messageDiv.classList.add('success');
+                    messageDiv.classList.remove('error');
+                    messageDiv.innerHTML = `✅ Soru ve şıklar başarıyla eklendi. (Soru ID: ${result.soru_id})`;
+                    document.getElementById('addQuestionForm').reset(); // Formu temizle
+                } else {
+                    messageDiv.classList.add('error');
+                    messageDiv.classList.remove('success');
+                    messageDiv.innerHTML = `❌ Soru eklenemedi: ${result.message || 'Bilinmeyen Hata'}`;
+                }
+
+            } catch (error) {
+                console.error('Soru ekleme hatası:', error);
+                messageDiv.classList.add('error');
+                messageDiv.classList.remove('success');
+                messageDiv.innerHTML = '❌ Sunucu hatası. Node.js sunucunuz çalışıyor mu?';
+            }
+        });
+
+        // ----------------------------------------------------
+        // Soru Silme Fonksiyonu
+        // ----------------------------------------------------
+        async function deleteQuestion() {
+            const soruId = document.getElementById('delete_soru_id').value;
+            const messageDiv = document.getElementById('deleteQuestionMessage');
+            messageDiv.style.display = 'none';
+
+            if (!soruId) {
+                messageDiv.classList.add('error');
+                messageDiv.innerHTML = '❌ Lütfen bir Soru ID\'si girin.';
+                messageDiv.style.display = 'block';
+                return;
+            }
+
+            if (!confirm(`${soruId} ID'li soruyu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}admin/delete-question/${soruId}`, {
+                    method: 'DELETE',
+                    headers: { 
+                        'Authorization': `Bearer ${userToken}` 
+                    }
+                });
+
+                const result = await response.json();
+
+                messageDiv.style.display = 'block';
+                if (response.ok && result.success) {
+                    messageDiv.classList.add('success');
+                    messageDiv.classList.remove('error');
+                    messageDiv.innerHTML = `✅ ${result.message}`;
+                    document.getElementById('delete_soru_id').value = ''; 
+                } else {
+                    messageDiv.classList.add('error');
+                    messageDiv.classList.remove('success');
+                    messageDiv.innerHTML = `❌ Soru silinemedi: ${result.message || 'Bilinmeyen Hata'}`;
+                }
+
+            } catch (error) {
+                console.error('Soru silme hatası:', error);
+                messageDiv.classList.add('error');
+                messageDiv.classList.remove('success');
+                messageDiv.innerHTML = '❌ Sunucu hatası.';
+            }
+        }
+        
+        // ----------------------------------------------------
+        // Kullanıcı Sonuçlarını Çekme Fonksiyonu
+        // ----------------------------------------------------
+        async function fetchResults() {
+            const container = document.getElementById('resultsTableContainer');
+            container.innerHTML = '<p>Sonuçlar yükleniyor...</p>';
+
+            try {
+                const response = await fetch(API_BASE_URL + 'admin/results', {
+                    headers: { 'Authorization': `Bearer ${userToken}` }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    if (result.results.length === 0) {
+                        container.innerHTML = '<p>Henüz kaydedilmiş bir quiz sonucu yok.</p>';
+                        return;
+                    }
+
+                    let tableHtml = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>E-posta</th>
+                                    <th>Doğru Sayısı</th>
+                                    <th>Yanlış Sayısı</th>
+                                    <th>Süre (sn)</th>
+                                    <th>Tarih</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    result.results.forEach(res => {
+                        const formattedDate = new Date(res.tarih).toLocaleDateString('tr-TR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        tableHtml += `
+                            <tr>
+                                <td>${res.sonuc_id}</td>
+                                <td>${res.email}</td>
+                                <td>${res.dogru_sayisi}</td>
+                                <td>${res.yanlis_sayisi}</td>
+                                <td>${res.sure_saniye}</td>
+                                <td>${formattedDate}</td>
+                            </tr>
+                        `;
+                    });
+                    tableHtml += '</tbody></table>';
+                    container.innerHTML = tableHtml;
+
+                } else {
+                    container.innerHTML = `<p class="error">❌ Sonuçlar yüklenemedi: ${result.message || 'Bilinmeyen Hata'}</p>`;
+                }
+            } catch (error) {
+                console.error('Sonuçları çekme hatası:', error);
+                container.innerHTML = '<p class="error">❌ Sunucuya bağlanılamadı. (Node.js sunucunuz çalışıyor mu?)</p>';
+            }
+        }
+
+        // ----------------------------------------------------
+        // Leaderboard Fonksiyonu
+        // ----------------------------------------------------
+        function formatTime(totalSeconds) {
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        async function fetchLeaderboard() {
+            const container = document.getElementById('leaderboardTableContainer');
+            container.innerHTML = '<p>Liderlik tablosu yükleniyor...</p>';
+
+            try {
+                const response = await fetch(API_BASE_URL + 'admin/leaderboard', {
+                    headers: { 'Authorization': `Bearer ${userToken}` }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    if (result.leaderboard.length === 0) {
+                        container.innerHTML = '<p>Henüz puanlama yapılmış sonuç bulunmamaktadır.</p>';
+                        return;
+                    }
+
+                    let tableHtml = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Sıra</th>
+                                    <th>Kullanıcı (E-posta)</th>
+                                    <th>Doğru Sayısı / Toplam Soru</th>
+                                    <th>Süre</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    result.leaderboard.forEach((res, index) => {
+                        tableHtml += `
+                            <tr>
+                                <td class="leaderboard-rank">${index + 1}.</td>
+                                <td>${res.email}</td>
+                                <td>${res.dogru_sayisi} / ${res.toplam_soru}</td>
+                                <td>${formatTime(res.sure_saniye)}</td>
+                            </tr>
+                        `;
+                    });
+                    tableHtml += '</tbody></table>';
+                    container.innerHTML = tableHtml;
+
+                } else {
+                    container.innerHTML = `<p class="error">❌ Liderlik tablosu yüklenemedi: ${result.message || 'Bilinmeyen Hata'}</p>`;
+                }
+            } catch (error) {
+                console.error('Leaderboard çekme hatası:', error);
+                container.innerHTML = '<p class="error">❌ Sunucuya bağlanılamadı. (Node.js sunucunuz çalışıyor mu?)</p>';
+            }
+        }
+    </script>
+</body>
+</html>
