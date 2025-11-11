@@ -1,31 +1,23 @@
 // Gerekli kütüphaneleri içe aktar
 const express = require('express');
 const { Pool } = require('pg'); 
-const cors = require('cors'); 
+const cors = require('cors'); // BURASI KRİTİK: Tüm isteklere izin verecek
 const jwt = require('jsonwebtoken');
 
 const app = express();
 const port = process.env.PORT || 3000; 
-
-// KESİN ÇÖZÜM: CORS için Netlify adresini çevre değişkeni olarak kullanıyoruz.
-// Eğer Render'da ALLOWED_ORIGIN tanımlı değilse, Netlify adresini yedek olarak kullanır.
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://taylorswiftquiz.netlify.app'; 
 
 // Token oluşturmak için kullanılacak gizli anahtar
 const JWT_SECRET = process.env.JWT_SECRET || 'cok_gizli_taylor_swift_anahtari'; 
 
 // --- Middleware ---
 app.use(express.json()); 
-// CORS'u sadece tanımlanan adresten gelen isteklere izin verecek şekilde yapılandırıyoruz
-app.use(cors({
-    origin: ALLOWED_ORIGIN,
-    methods: ['GET', 'POST', 'DELETE']
-}));
+app.use(cors()); // <-- SADECE BU KALSIN! Tüm kaynaklara izin verilir (Hata tespiti için)
 
 // --- 1. PostgreSQL Veritabanı Bağlantısı Ayarları ---
 const dbConfig = {
-    connectionString: process.env.DATABASE_URL, // Render'dan gelen URL
-    ssl: { rejectUnauthorized: false } // Render için SSL zorunluluğu
+    connectionString: process.env.DATABASE_URL, 
+    ssl: { rejectUnauthorized: false } 
 };
 
 // Yerel test için (Gerekirse SSL'i devre dışı bırakır):
@@ -37,7 +29,7 @@ let pool = new Pool(dbConfig);
 
 // PostgreSQL'e özel, tablo oluşturma ve admin ekleme fonksiyonu
 async function setupDatabase() {
-    console.log('Veritabanı yapısı kontrol ediliyor...');
+    // ... (Tablo oluşturma kodları aynı kalır) ...
     const client = await pool.connect();
     try {
         const schema = `
@@ -71,7 +63,6 @@ async function setupDatabase() {
         await client.query(schema);
         console.log('✅ Veritabanı yapısı başarılı bir şekilde hazırlandı (veya zaten mevcuttu).');
         
-        // Admin kullanıcısı yoksa ekle
         const adminCheck = await client.query("SELECT COUNT(*) FROM Kullanicilar WHERE rol = 'admin'");
         if (parseInt(adminCheck.rows[0].count) === 0) {
             await client.query("INSERT INTO Kullanicilar (email, sifre_hash, rol) VALUES ('admin@quiz.com', '123456', 'admin')");
