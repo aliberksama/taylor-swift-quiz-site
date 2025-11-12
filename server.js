@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const port = process.env.PORT || 3000; 
 
-// CORS için Netlify adresini çevre değişkeni olarak kullanıyoruz.
+// Canlı Netlify adresini çevre değişkeninden al
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://taylorswiftquiz.netlify.app'; 
 
 // Token oluşturmak için kullanılacak gizli anahtar
@@ -30,48 +30,47 @@ if (process.env.NODE_ENV !== 'production') { dbConfig.ssl = false; }
 
 let pool = new Pool(dbConfig); 
 
-// PostgreSQL'e özel, tablo oluşturma ve admin ekleme fonksiyonu
+// PostgreSQL'e özel, tablo oluşturma ve admin ekleme fonksiyonu (TÜMÜ KÜÇÜK HARF)
 async function setupDatabase() {
-    console.log('Veritabanı yapısı kontrol ediliyor...');
+    console.log('Checking database schema (all lowercase)...');
     const client = await pool.connect();
     try {
-        // Tabloları küçük harfle oluşturuyoruz (PostgreSQL standardı)
         const schema = `
-            CREATE TABLE IF NOT EXISTS kullanicilar (
-                kullanici_id SERIAL PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS users (
+                user_id SERIAL PRIMARY KEY,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 sifre_hash VARCHAR(255) NOT NULL,
                 rol VARCHAR(20) NOT NULL DEFAULT 'kullanici'
             );
-            CREATE TABLE IF NOT EXISTS sorular (
-                soru_id SERIAL PRIMARY KEY,
-                soru_metni TEXT NOT NULL,
-                fotograf_url VARCHAR(255),
-                dogru_cevap_index INTEGER NOT NULL
+            CREATE TABLE IF NOT EXISTS questions (
+                question_id SERIAL PRIMARY KEY,
+                question_text TEXT NOT NULL,
+                image_url VARCHAR(255),
+                correct_answer_index INTEGER NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS cevapsiklari (
-                cevap_id SERIAL PRIMARY KEY,
-                soru_id INTEGER REFERENCES sorular(soru_id) ON DELETE CASCADE,
-                sik_metri VARCHAR(255) NOT NULL,
-                sik_index INTEGER NOT NULL
+            CREATE TABLE IF NOT EXISTS answers (
+                answer_id SERIAL PRIMARY KEY,
+                question_id INTEGER REFERENCES questions(question_id) ON DELETE CASCADE,
+                answer_text VARCHAR(255) NOT NULL,
+                answer_index INTEGER NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS quizsonuclari (
-                sonuc_id SERIAL PRIMARY KEY,
-                kullanici_id INTEGER REFERENCES kullanicilar(kullanici_id),
-                dogru_sayisi INTEGER NOT NULL,
-                yanlis_sayisi INTEGER NOT NULL,
-                sure_saniye INTEGER DEFAULT 0,
-                tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            CREATE TABLE IF NOT EXISTS results (
+                result_id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(user_id),
+                correct_count INTEGER NOT NULL,
+                wrong_count INTEGER NOT NULL,
+                duration_seconds INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `;
         await client.query(schema);
-        console.log('✅ Veritabanı yapısı başarılı bir şekilde hazırlandı (veya zaten mevcuttu).');
+        console.log('✅ Database schema is ready (all lowercase).');
         
         // Admin kullanıcısını ekleme
-        const adminCheck = await client.query("SELECT COUNT(*) FROM kullanicilar WHERE rol = 'admin'");
+        const adminCheck = await client.query("SELECT COUNT(*) FROM users WHERE rol = 'admin'");
         if (parseInt(adminCheck.rows[0].count) === 0) {
-            await client.query("INSERT INTO kullanicilar (email, sifre_hash, rol) VALUES ('admin@quiz.com', '123456', 'admin')");
-            console.log('✅ Varsayılan admin kullanıcısı eklendi.');
+            await client.query("INSERT INTO users (email, sifre_hash, rol) VALUES ('admin@quiz.com', '123456', 'admin')");
+            console.log('✅ Default admin user created.');
         }
 
     } finally {
@@ -87,15 +86,15 @@ setupDatabase();
 // --- 2. YENİ KULLANICI KAYIT ROTASI ---
 app.post('/api/register', async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) { return res.status(400).json({ success: false, message: 'E-posta ve şifre gereklidir.' }); }
+    if (!email || !password) { return res.status(400).json({ success: false, message: 'Email and password are required.' }); }
     try {
-        const existingUsers = await pool.query('SELECT email FROM kullanicilar WHERE email = $1', [email]);
-        if (existingUsers.rows.length > 0) { return res.status(409).json({ success: false, message: 'Bu e-posta zaten kullanımda.' }); }
-        const result = await pool.query("INSERT INTO kullanicilar (email, sifre_hash, rol) VALUES ($1, $2, 'kullanici') RETURNING kullanici_id", [email, password]);
-        res.status(201).json({ success: true, message: 'Kayıt başarılı! Giriş yapabilirsiniz.', userId: result.rows[0].kullanici_id });
+        const existingUsers = await pool.query('SELECT email FROM users WHERE email = $1', [email]);
+        if (existingUsers.rows.length > 0) { return res.status(409).json({ success: false, message: 'This email is already in use.' }); }
+        const result = await pool.query("INSERT INTO users (email, sifre_hash, rol) VALUES ($1, $2, 'kullanici') RETURNING user_id", [email, password]);
+        res.status(201).json({ success: true, message: 'Registration successful! You can now log in.', userId: result.rows[0].user_id });
     } catch (error) {
-        console.error('Kayıt hatası:', error);
-        res.status(500).json({ success: false, message: 'Sunucu hatası.' });
+        console.error('Registration error:', error);
+        res.status(500).json({ success: false, message: 'Server error.' });
     }
 });
 
@@ -104,29 +103,29 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const users = await pool.query('SELECT * FROM kullanicilar WHERE email = $1', [email]);
+        const users = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         const user = users.rows[0];
-        if (!user) { return res.status(401).json({ success: false, message: 'Kullanıcı bulunamadı.' }); }
+        if (!user) { return res.status(401).json({ success: false, message: 'User not found.' }); }
         if (password === user.sifre_hash) { 
-            const token = jwt.sign({ kullanici_id: user.kullanici_id, rol: user.rol, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
-            return res.json({ success: true, message: 'Giriş başarılı!', token: token, rol: user.rol, email: user.email });
+            const token = jwt.sign({ kullanici_id: user.user_id, rol: user.rol, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
+            return res.json({ success: true, message: 'Login successful!', token: token, rol: user.rol, email: user.email });
         } else {
-            return res.status(401).json({ success: false, message: 'Yanlış şifre.' });
+            return res.status(401).json({ success: false, message: 'Incorrect password.' });
         }
     } catch (error) {
-        console.error('Giriş hatası:', error);
-        return res.status(500).json({ success: false, message: 'Sunucu hatası.' });
+        console.error('Login error:', error);
+        return res.status(500).json({ success: false, message: 'Server error.' });
     }
 });
 
 
-// --- Yetkilendirme (Auth) Middleware'i aynı kalır ---
+// --- Yetkilendirme (Auth) Middleware'i ---
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (token == null) { return res.status(401).json({ success: false, message: 'Giriş yapınız.' }); }
+    if (token == null) { return res.status(401).json({ success: false, message: 'Please log in.' }); }
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) { return res.status(403).json({ success: false, message: 'Geçersiz veya süresi dolmuş token.' }); }
+        if (err) { return res.status(403).json({ success: false, message: 'Invalid or expired token.' }); }
         req.user = user; 
         next();
     });
@@ -134,44 +133,44 @@ const authenticateToken = (req, res, next) => {
 
 // --- 4. SORU EKLEME ROTASI ---
 app.post('/api/admin/add-question', authenticateToken, async (req, res) => {
-    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Yetkisiz erişim. Sadece adminler soru ekleyebilir.' }); }
+    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Unauthorized. Only admins can add questions.' }); }
     const { soru_metni, fotograf_url, cevap_siklari, dogru_cevap_index } = req.body;
-    if (!soru_metni || !cevap_siklari || !dogru_cevap_index || cevap_siklari.length !== 4) { return res.status(400).json({ success: false, message: 'Tüm alanlar (4 şık dahil) gereklidir.' }); }
+    if (!soru_metni || !cevap_siklari || !dogru_cevap_index || cevap_siklari.length !== 4) { return res.status(400).json({ success: false, message: 'All fields (including 4 answers) are required.' }); }
     try {
         const client = await pool.connect();
         await client.query('BEGIN');
         try {
-            const result = await client.query('INSERT INTO sorular (soru_metni, fotograf_url, dogru_cevap_index) VALUES ($1, $2, $3) RETURNING soru_id', [soru_metni, fotograf_url || null, dogru_cevap_index]);
-            const newSoruId = result.rows[0].soru_id;
+            const result = await client.query('INSERT INTO questions (question_text, image_url, correct_answer_index) VALUES ($1, $2, $3) RETURNING question_id', [soru_metni, fotograf_url || null, dogru_cevap_index]);
+            const newSoruId = result.rows[0].question_id;
             for (let i = 0; i < cevap_siklari.length; i++) {
-                await client.query('INSERT INTO cevapsiklari (soru_id, sik_metri, sik_index) VALUES ($1, $2, $3)', [newSoruId, cevap_siklari[i], i + 1]);
+                await client.query('INSERT INTO answers (question_id, answer_text, answer_index) VALUES ($1, $2, $3)', [newSoruId, cevap_siklari[i], i + 1]);
             }
             await client.query('COMMIT');
             client.release();
-            res.json({ success: true, message: 'Soru ve şıklar başarıyla eklendi.', soru_id: newSoruId });
+            res.json({ success: true, message: 'Question added successfully.', soru_id: newSoruId });
         } catch (error) {
             await client.query('ROLLBACK');
             client.release();
             throw error; 
         }
     } catch (error) {
-        console.error('Soru ekleme hatası:', error);
-        res.status(500).json({ success: false, message: 'Sunucu hatası.' });
+        console.error('Add question error:', error);
+        res.status(500).json({ success: false, message: 'Server error while adding question.' });
     }
 });
 
 
 // --- 5. SORU SİLME ROTASI ---
 app.delete('/api/admin/delete-question/:soru_id', authenticateToken, async (req, res) => {
-    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Yetkisiz erişim. Sadece adminler soru silebilir.' }); }
+    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Unauthorized. Only admins can delete.' }); }
     const soruId = req.params.soru_id;
     try {
-        const result = await pool.query('DELETE FROM sorular WHERE soru_id = $1', [soruId]);
-        if (result.rowCount === 0) { return res.status(404).json({ success: false, message: 'Silinecek soru bulunamadı.' }); }
-        res.json({ success: true, message: `Soru ID: ${soruId} başarıyla silindi.` });
+        const result = await pool.query('DELETE FROM questions WHERE question_id = $1', [soruId]);
+        if (result.rowCount === 0) { return res.status(404).json({ success: false, message: 'Question not found.' }); }
+        res.json({ success: true, message: `Question ID: ${soruId} deleted successfully.` });
     } catch (error) {
-        console.error('Soru silme hatası:', error);
-        res.status(500).json({ success: false, message: 'Soru silinirken sunucu hatası oluştu.' });
+        console.error('Delete question error:', error);
+        res.status(500).json({ success: false, message: 'Server error while deleting.' });
     }
 });
 
@@ -179,76 +178,76 @@ app.delete('/api/admin/delete-question/:soru_id', authenticateToken, async (req,
 // --- 6. QUIZ SORULARINI ÇEKME ROTASI ---
 app.get('/api/quiz/questions', async (req, res) => {
     try {
-        const questionsResult = await pool.query('SELECT soru_id, soru_metni, fotograf_url FROM sorular ORDER BY RANDOM()');
+        const questionsResult = await pool.query('SELECT question_id, question_text, image_url FROM questions ORDER BY RANDOM()');
         let questions = questionsResult.rows;
         for (const question of questions) {
-            const choicesResult = await pool.query('SELECT sik_index, sik_metri FROM cevapsiklari WHERE soru_id = $1 ORDER BY sik_index', [question.soru_id]);
+            const choicesResult = await pool.query('SELECT answer_index, answer_text FROM answers WHERE question_id = $1 ORDER BY answer_index', [question.question_id]);
             question.siklar = choicesResult.rows;
         }
         res.json({ success: true, questions: questions });
     } catch (error) {
-        console.error('Soru çekme hatası:', error);
-        res.status(500).json({ success: false, message: 'Sorular yüklenemedi.' });
+        console.error('Fetch questions error:', error);
+        res.status(500).json({ success: false, message: 'Could not load questions.' });
     }
 });
 
 
 // --- 7. QUIZ SONUÇLARINI KAYDETME ROTASI ---
 app.post('/api/quiz/submit', authenticateToken, async (req, res) => {
-    const kullanici_id = req.user.kullanici_id; 
+    const kullanici_id = req.user.user_id; // Sütun adını düzelttim
     const { dogru_sayisi, yanlis_sayisi, sure_saniye } = req.body; 
     try {
-        const result = await pool.query('INSERT INTO quizsonuclari (kullanici_id, dogru_sayisi, yanlis_sayisi, sure_saniye) VALUES ($1, $2, $3, $4) RETURNING sonuc_id', [kullanici_id, dogru_sayisi, yanlis_sayisi, sure_saniye]);
-        res.json({ success: true, message: 'Quiz sonuçları başarıyla kaydedildi.', sonuc_id: result.rows[0].sonuc_id });
+        const result = await pool.query('INSERT INTO results (user_id, correct_count, wrong_count, duration_seconds) VALUES ($1, $2, $3, $4) RETURNING result_id', [kullanici_id, dogru_sayisi, yanlis_sayisi, sure_saniye]);
+        res.json({ success: true, message: 'Quiz results saved successfully.', sonuc_id: result.rows[0].result_id });
     } catch (error) {
-        console.error('Sonuç kaydetme hatası:', error);
-        res.status(500).json({ success: false, message: 'Sunucu hatası.' });
+        console.error('Submit result error:', error);
+        res.status(500).json({ success: false, message: 'Server error.' });
     }
 });
 
 
 // --- 8. ADMIN SONUÇLARI GÖRÜNTÜLEME ROTASI ---
 app.get('/api/admin/results', authenticateToken, async (req, res) => {
-    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Yetkisiz erişim.' }); }
+    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Unauthorized.' }); }
     try {
         const results = await pool.query(`
-            SELECT QS.sonuc_id, U.email, QS.dogru_sayisi, QS.yanlis_sayisi, QS.tarih, QS.sure_saniye
-            FROM quizsonuclari AS QS JOIN kullanicilar AS U ON QS.kullanici_id = U.kullanici_id
-            ORDER BY QS.tarih DESC
+            SELECT R.result_id, U.email, R.correct_count, R.wrong_count, R.created_at, R.duration_seconds
+            FROM results AS R JOIN users AS U ON R.user_id = U.user_id
+            ORDER BY R.created_at DESC
         `);
         res.json({ success: true, results: results.rows });
     } catch (error) {
-        console.error('Sonuçları çekme hatası:', error);
-        res.status(500).json({ success: false, message: 'Sunucu hatası.' });
+        console.error('Fetch results error:', error);
+        res.status(500).json({ success: false, message: 'Server error.' });
     }
 });
 
 
 // --- 9. LEADERBOARD ROTASI ---
 app.get('/api/admin/leaderboard', authenticateToken, async (req, res) => {
-    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Yetkisiz erişim.' }); }
+    if (req.user.rol !== 'admin') { return res.status(403).json({ success: false, message: 'Unauthorized.' }); }
     try {
         const leaderboard = await pool.query(`
-            SELECT U.email, QS.dogru_sayisi, (QS.dogru_sayisi + QS.yanlis_sayisi) AS toplam_soru, QS.sure_saniye
-            FROM quizsonuclari AS QS JOIN kullanicilar AS U ON QS.kullanici_id = U.kullanici_id
-            ORDER BY QS.dogru_sayisi DESC, QS.sure_saniye ASC, QS.tarih DESC
+            SELECT U.email, R.correct_count, (R.correct_count + R.wrong_count) AS total_questions, R.duration_seconds
+            FROM results AS R JOIN users AS U ON R.user_id = U.user_id
+            ORDER BY R.correct_count DESC, R.duration_seconds ASC, R.created_at DESC
             LIMIT 50 
         `);
         res.json({ success: true, leaderboard: leaderboard.rows });
     } catch (error) {
-        console.error('Leaderboard hatası:', error);
-        res.status(500).json({ success: false, message: 'Liderlik tablosu yüklenemedi.' });
+        console.error('Leaderboard error:', error);
+        res.status(500).json({ success: false, message: 'Could not load leaderboard.' });
     }
 });
 
 
 // --- 10. Temel Test Rotası ---
 app.get('/', (req, res) => {
-    res.send('Taylor Swift Quiz Sitesi Arka Yüzü Başarılı ve Çalışıyor!');
+    res.send('Taylor Swift Quiz Backend is running successfully! (V3 - English)');
 });
 
 
 // Sunucuyu başlatma
 app.listen(port, () => {
-    console.log(`🚀 Sunucu şu adreste çalışıyor: https://taylor-swift-quiz-site.onrender.com`);
+    console.log(`🚀 Server is running on: https://taylor-swift-quiz-site.onrender.com`);
 });
